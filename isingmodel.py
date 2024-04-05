@@ -34,6 +34,7 @@ def metropolis(lattice_old:np.ndarray, temperature:float, hamiltonian:float, ndi
 
     slice_idx = [np.random.randint(0, N) for _ in range(ndim)]
     lattice_new[tuple(slice_idx)] *= -1
+    lattice_axis_length = lattice_old.shape[0]
     # calculate the change in energy if we flip the spin at that point
     sum_neighbours = lattice_old[(slice_idx[0]+1) % lattice_axis_length, slice_idx[1]] \
                     + lattice_old[(slice_idx[0]-1) % lattice_axis_length, slice_idx[1]] \
@@ -49,53 +50,78 @@ def metropolis(lattice_old:np.ndarray, temperature:float, hamiltonian:float, ndi
     
     return lattice_new, hamiltonian
 
-def equilibrate(lattice:np.ndarray, temperature:float, nsteps:int) -> np.ndarray:
-    ''' Equilibrate the lattice by running the Metropolis algorithm for nsteps steps.
-        Returns the magnetization of the lattice at each step.
+def find_equilibrium_energy(temperature:float) -> float:
+    ''' Calculate the equilibrium energy of the lattice by running the Metropolis algorithm for a small 5x5 lattice.
+        This equilibrium energy can be used to determine if the system is in equilibrium for larger systems. 
+        Returns the average energy per particle that corresponds to equilibrium for a given temperature. 
     '''
+    nsteps = 500 ; lattice_axis_length = 5 # small lattice equilibrates fast
+    equilibrium_energies = []
+    for i in range(5):
+        hamiltonians = np.zeros(nsteps) # store energy at each step
+        lattice = init_lattice(lattice_axis_length=lattice_axis_length, ndim=2) 
+        hamiltonian = complete_hamiltonian(lattice)
+        for i in range(nsteps):
+            lattice, hamiltonian = metropolis(lattice, temperature, hamiltonian)
+            hamiltonians[i] = hamiltonian
+        equilibrium_energies.append(np.mean(hamiltonians[-nsteps//2:]) / lattice.size) # the average energy per particle of the last half of the steps is roughly the equilibrium energy
+    return np.median(equilibrium_energies)
+
+def equilibrate_lattice(lattice:np.ndarray, temperature:float, nsteps:int) -> np.ndarray:
+    ''' Equilibrate the lattice by running the Metropolis algorithm until the energy is close to the equilibrium energy, or for nsteps steps.
+        We define close as within +- 1% of the equilibrium energy. If this is not reached, we return the lattice after nsteps steps.
+        Returns the lattice close to equilibrium, or after nsteps so that we can start the actual simulation from there.
+    '''
+    equilibrium_energy = find_equilibrium_energy(temperature=temperature)
     magnetizations = np.zeros(nsteps)
     hamiltonian = complete_hamiltonian(lattice)
-    for i in tqdm(range(nsteps)):
+
+    hamiltonians = np.zeros(nsteps)
+    for i in range(nsteps): 
         lattice, hamiltonian = metropolis(lattice, temperature, hamiltonian)
         total_magnetization = np.sum(lattice)
         magnetizations[i] = total_magnetization
+        hamiltonians[i] = hamiltonian
 
-    return magnetizations, lattice
+        if hamiltonian/lattice.size > equilibrium_energy - 0.01*np.abs(equilibrium_energy) \
+                and hamiltonian/lattice.size < equilibrium_energy + 0.01*np.abs(equilibrium_energy):
+            return lattice # stop the simulation if we are at equilibrium
+
+    return lattice # if we don't reach equilibrium, return the lattice after nsteps
+
+def run_sim(lattice_axis_length:int, temperature:float, nsteps_equi:int, nsteps_sim:int) -> np.ndarray:
+    ''' Run the simulation for a lattice of size lattice_axis_length x lattice_axis_length at temperature for nsteps steps, equilibrating for a maximum of nsteps_equi steps first.
+        Returns the magnetization of the lattice at each step.
+    '''
+    lattice = init_lattice(lattice_axis_length=lattice_axis_length, ndim=2)
+    lattice_equilibrated = equilibrate_lattice(lattice, temperature, nsteps_equi)
+
+    # now run the actual simulation to calculate properties near equilibrium
+    magnetizations = np.zeros(nsteps_sim)
+    hamiltonian = complete_hamiltonian(lattice_equilibrated)
+    for i in range(nsteps_sim):
+        lattice_equilibrated, hamiltonian = metropolis(lattice_equilibrated, temperature, hamiltonian)
+        magnetizations[i] = np.sum(lattice_equilibrated)
+
+    return magnetizations
 
 def main():
-    ndim = 2
-    global lattice_axis_length
-    lattice_axis_length = 20
-    temperature = 1
-    n_cycles = 200 # number of times we do N**2 Metropolis steps 
-
+    ndim = 2 ; lattice_axis_length = 25 ; temperature = 1.5
+    n_cycles = 300 # number of times we do N**2 Metropolis steps 
     num_spins = lattice_axis_length**ndim
 
+    nsteps_sim = n_cycles * num_spins
+    nsteps_equi = n_cycles * num_spins * 10 # maximum number of steps to equilibrate (if not reached earlier)
+
+    # run the simulation a few times
     fig, ax = plt.subplots()
-    for i in range(2): # do 3 runs because it can get stuck in a local minimum
+    for i in range(5):
         lattice = init_lattice(lattice_axis_length, ndim=2)
-        magnetizations, lattice_new = equilibrate(lattice, temperature, n_cycles * num_spins)
+        magnetizations = run_sim(lattice_axis_length, temperature, nsteps_equi, nsteps_sim)
         ax.plot(np.arange(n_cycles * num_spins) / num_spins, magnetizations / num_spins, label='Magnetization')
     ax.set_xlabel('Time [1/N$^2$]')
     ax.set_ylabel('Magnetization per spin')
     plt.show()
-
-    # imshow the last lattice
-    fig, ax = plt.subplots()
-    ax.imshow(lattice_new, cmap='gray', vmin=-1, vmax=1)
-    plt.show()
-
-    # temperatures = np.arange(1, 4, 0.2)
-    # for temperature in temperatures:
-        
-
-    # TODO: 
-    # - run for different temperatures (1 to 4 with 0.2 increments)
-    # - sanity check if the outcomes are ok if we plot it for different temperatures
-    # - find a way to check if the system is in equilibrium, so we can stop the simulation instead of running for a fixed number of steps
-    # - plot the magnetization as a function of temperature
-    # - ...
-
 
 if __name__ == '__main__':
     main()
