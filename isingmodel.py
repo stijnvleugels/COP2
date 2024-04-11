@@ -89,6 +89,42 @@ def equilibrate_lattice(lattice:np.ndarray, temperature:float, nsteps:int) -> np
 
     return lattice # if we don't reach equilibrium, return the lattice after nsteps
 
+def autocorrelation_function(magnetizations):
+    ''' Compute the autocorrelation_function for magnetizations (per spin), where time and time_max are taken from the length
+        of magnetizations. Thus, give the array of magnetizations per spin from the equilibration time till time_max. '''
+    time_max = len(magnetizations) - 1
+    time = np.arange(len(magnetizations))
+    chi = np.zeros_like(time)
+    for t in time:
+        chi[t] = 1/(time_max - t) * (np.sum( (magnetizations * np.roll(magnetizations, -t))[:time_max-t+1] ) \
+                - np.sum(magnetizations[:time_max-t+1]) * np.sum(np.roll(magnetizations, -t)[:time_max-t+1]))
+    return chi
+
+def correlation_time(lattice:np.ndarray, temperature:float, nsteps_equi:int):
+    step_factor = 50
+    steps_per_round = nsteps_equi / step_factor
+
+    magnetizations = np.zeros(steps_per_round)
+    total_magnetizations = np.array([])
+    hamiltonian = complete_hamiltonian(lattice)
+
+    for i in range(nsteps_equi):
+        lattice, hamiltonian = metropolis(lattice, temperature, hamiltonian)
+        magnetizations[(i-1) % steps_per_round] = np.sum(lattice)
+
+        if ((i-1) % steps_per_round == 0):
+            total_magnetizations = np.append(total_magnetizations, magnetizations)
+            autocor = autocorrelation_function(total_magnetizations / lattice.shape[0]**2)
+            mask = (autocor <= 0)
+            if len(autocor[mask]) == 0:
+                pass
+            else:
+                idx_neg_autocor = np.argmax(mask)[0]
+                cor_time = np.sum(autocor[:idx_neg_autocor] / autocor[0])
+                return cor_time, lattice, hamiltonian, total_magnetizations
+            
+    return
+
 def run_sim(lattice_axis_length:int, temperature:float, nsteps_equi:int, nsteps_sim:int) -> np.ndarray:
     ''' Run the simulation for a lattice of size lattice_axis_length x lattice_axis_length at temperature for nsteps steps, equilibrating for a maximum of nsteps_equi steps first.
         Returns the magnetization of the lattice at each step.
@@ -96,14 +132,18 @@ def run_sim(lattice_axis_length:int, temperature:float, nsteps_equi:int, nsteps_
     lattice = init_lattice(lattice_axis_length=lattice_axis_length, ndim=2)
     lattice_equilibrated = equilibrate_lattice(lattice, temperature, nsteps_equi)
 
+    cor_time, lattice, hamiltonian, magnetizations = correlation_time(lattice_equilibrated, temperature, nsteps_equi)
+    ### %%%%%%%%%%% use these values to continue sim a certain number of cor_times and compute all averages and stds
+
+
     # now run the actual simulation to calculate properties near equilibrium
     magnetizations = np.zeros(nsteps_sim)
     hamiltonian = complete_hamiltonian(lattice_equilibrated)
     for i in range(nsteps_sim):
         lattice_equilibrated, hamiltonian = metropolis(lattice_equilibrated, temperature, hamiltonian)
         magnetizations[i] = np.sum(lattice_equilibrated)
-
-    return magnetizations
+    
+    return magnetizations, cor_time
 
 def main():
     ndim = 2 ; lattice_axis_length = 25 ; temperature = 1.5
@@ -117,7 +157,7 @@ def main():
     fig, ax = plt.subplots()
     for i in range(5):
         lattice = init_lattice(lattice_axis_length, ndim=2)
-        magnetizations = run_sim(lattice_axis_length, temperature, nsteps_equi, nsteps_sim)
+        magnetizations, cor_time = run_sim(lattice_axis_length, temperature, nsteps_equi, nsteps_sim)
         ax.plot(np.arange(n_cycles * num_spins) / num_spins, magnetizations / num_spins, label='Magnetization')
     ax.set_xlabel('Time [1/N$^2$]')
     ax.set_ylabel('Magnetization per spin')
