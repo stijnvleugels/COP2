@@ -1,0 +1,2 @@
+Temperature,Correlation_time,Magnetization_mean,Magnetization_std,Energy_mean,Energy_std,Magnetic_susceptibility_mean,Magnetic_susceptibility_std,Specific_heat_mean,Specific_heat_std
+1.0,801.9839636769175,0.9993109403999997,2.1728480783590206e-05,-1.9972904815999997,8.44237551774367e-05,0.0013237613840798518,0.001109772979078861,0.019987541223404685,0.01591601839943156
