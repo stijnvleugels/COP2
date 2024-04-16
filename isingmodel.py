@@ -122,7 +122,7 @@ def autocorrelation_function(magnetizations:np.ndarray, sampling_factor:int=500,
 
 def run_sim(lattice:np.ndarray, temperature:float, num_boxes:int):
     t_ratio_threshold = 0.05
-    step_factor = 20
+    step_factor = 100
 
     max_steps_sim = 1000000 * 16 * num_boxes
     steps_per_round = max_steps_sim // step_factor
@@ -223,7 +223,7 @@ def quantities(magnetizations:np.ndarray, hamiltonians:np.ndarray, num_spins:flo
     return
 
 def main():
-    ndim = 2 ; lattice_axis_length = 25 ; temperature = 1.5
+    ndim = 2 ; lattice_axis_length = 50 ; temperature = 1.5
     n_cycles = 300 # number of times we do N**2 Metropolis steps 
     num_spins = lattice_axis_length**ndim
     
@@ -242,9 +242,9 @@ def main():
         csvwriter.writerow(field_names)
         csvfile.close()
 
-    for temperature in np.linspace(1.0, 4.0, 16):
+    for temperature in np.linspace(1.0, 4.0, 4):
         print('Running simulation for T = ', temperature)
-        for i in range(1):
+        for i in range(5):
             magnetizations, hamiltonians, cor_time = init_sim(lattice_axis_length, temperature, nsteps_equi, num_boxes)
             quantities(magnetizations, hamiltonians, num_spins, cor_time, temperature, filename)
 
