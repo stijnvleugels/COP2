@@ -36,21 +36,37 @@ def figure_tcor():
     plt.savefig('correlation_time.pdf')
     plt.show()
 
+def figure_quantities():
+    ''' Plot the four quantities of interest. '''
+    df = pd.read_csv("simulation_17april.csv")
+
+    fig, ax = plt.subplots(4, 1, figsize=(8, 8), sharex=True, constrained_layout=True)
+
+    for i in range(4):
+        for j in range(0, len(df['Temperature']), 3):
+            ax[i].errorbar(df['Temperature'][j], df.iloc[j,i*2+2], yerr=df.iloc[j,i*2+3],
+                            fmt='o', capsize=5, capthick=1, elinewidth=1, 
+                            ecolor='black', color='black', markersize=5)
+            ax[i].scatter(df['Temperature'][j], df.iloc[j+1,i*2+2], alpha=0.5, color='blue')
+            ax[i].scatter(df['Temperature'][j], df.iloc[j+2,i*2+2], alpha=0.5, color='blue')
+        
+        ax[i].axvline(2.269, color='red', linestyle='--', label='$T_{crit}$')
+        ax[i].grid(alpha=0.5)
+
+    ax[0].set(ylabel='$|m|$')
+    ax[1].set(ylabel='$e$')
+    ax[2].set(ylabel='$\chi_M$')
+    ax[3].set(xlabel='Temperature [J/k$_B$]', ylabel='$C$')
+    ax[0].legend(loc='upper right')
+
+
+    plt.savefig('quantities.pdf')
+    plt.show()
+
 def main():
     set_defaults()
     figure_tcor()
+    figure_quantities()
 
 if __name__ == '__main__':
     main()
-# fig, ax = plt.subplots(4, 1, figsize=(6, 7), sharex=True, constrained_layout=True)
-
-# for i in range(4):
-#     ax[i].scatter(df['Temperature'], df.iloc[:,i*2+2])
-#     ax[i].errorbar(df['Temperature'], df.iloc[:,i*2+2], yerr=df.iloc[:,i*2+1], fmt='o')
-
-# ax[0].set(ylabel='Absolute magnetization', title='Mean and standard deviation of quantities per spin')
-# ax[1].set(ylabel='Energy')
-# ax[2].set(ylabel='Magnetic susceptibility')
-# ax[3].set(xlabel='Temperature', ylabel='Specific heat')
-
-# plt.show()

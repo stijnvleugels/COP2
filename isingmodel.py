@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import csv
-
+import matplotlib as mpl
 
 def init_lattice(lattice_axis_length:int, ndim:int=2) -> np.ndarray:
     ''' Initialize a lattice of spins, with random orientation, of size N x N x ... x N (ndim times) where N is lattice_axis_length'''
@@ -24,7 +24,6 @@ def complete_hamiltonian(lattice:np.ndarray) -> float:
     hami += - external_field * np.sum(lattice)
 
     return hami
-
 
 def metropolis(lattice_old:np.ndarray, temperature:float, hamiltonian:float, ndim:int=2) -> np.ndarray:
     ''' Perform one step of the Metropolis algorithm.
@@ -88,9 +87,9 @@ def equilibrate_lattice(lattice:np.ndarray, temperature:float, nsteps:int) -> np
 
         if hamiltonian/lattice.size > equilibrium_energy - 0.01*np.abs(equilibrium_energy) \
                 and hamiltonian/lattice.size < equilibrium_energy + 0.01*np.abs(equilibrium_energy):
-            return lattice # stop the simulation if we are at equilibrium
+            return lattice, magnetizations[:i+1], hamiltonians[:i+1] # stop the simulation if we are at equilibrium
 
-    return lattice # if we don't reach equilibrium, return the lattice after nsteps
+    return lattice, magnetizations, hamiltonians # if we don't reach equilibrium, return the lattice after nsteps
 
 def autocorrelation_function(magnetizations:np.ndarray, sampling_factor:int=500, t_ratio_threshold:float=0.05) -> tuple[np.ndarray, float]:
     ''' Compute the autocorrelation chi for magnetizations.
@@ -187,7 +186,7 @@ def init_sim(lattice_axis_length:int, temperature:float, nsteps_equi:int, num_bo
     '''
     lattice = init_lattice(lattice_axis_length=lattice_axis_length, ndim=2)
     print('Equilibrating lattice...')
-    lattice_equilibrated = equilibrate_lattice(lattice, temperature, nsteps_equi)
+    lattice_equilibrated = equilibrate_lattice(lattice, temperature, nsteps_equi)[0]
 
     print('Calculating correlation time...')
     cor_time, lattice, hamiltonians, magnetizations = run_sim(lattice_equilibrated, temperature, num_boxes)
@@ -243,6 +242,47 @@ def quantities(magnetizations:np.ndarray, hamiltonians:np.ndarray, num_spins:flo
 
     return
 
+def plot_equi(nsteps_equi:int):
+    colors = ['blue', 'black', 'red']
+    alphas = [1, 0.7]
+
+    # fig, ax = plt.subplots(2,1,figsize=(8,6), constrained_layout=True, sharex=True)
+    # for j, temperature in enumerate([1.0, 2.2, 4.0]):
+    #     for i in range(1):
+    #         print('bezig')
+    #         axis_length=50
+    #         lattice = init_lattice(lattice_axis_length=axis_length, ndim=2)
+    #         lattice_equilibrated, magnetizations, hamiltonians = equilibrate_lattice(lattice, temperature, nsteps_equi)
+    #         ax[0].plot(np.arange(len(magnetizations)) / axis_length**2, magnetizations / axis_length**2, label=f'T={temperature}', color=colors[j], alpha=0.7)
+    #         ax[1].plot(np.arange(len(hamiltonians)) / axis_length**2, hamiltonians / axis_length**2, color=colors[j], alpha=0.7)
+
+    # ax[0].set(ylabel='magnetization per spin', xscale='log')
+    # ax[1].set(xlabel='t [$1/N^2$]', ylabel='energy per spin', xscale='log')
+    # ax[0].legend(loc='best')
+    # plt.savefig('Equi.pdf')
+    # plt.show()
+
+    cmap = mpl.colors.ListedColormap(['black', 'white'])
+    bounds=[-1,0,1]
+    norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+
+    fig, ax = plt.subplots(1,3,figsize=(8,4), constrained_layout=True, sharey=True)
+    for j, temperature in enumerate([1.0, 2.2, 4.0]):
+        for i in range(1):
+            print('bezig')
+            axis_length=50
+            lattice = init_lattice(lattice_axis_length=axis_length, ndim=2)
+            lattice_equilibrated, magnetizations, hamiltonians = equilibrate_lattice(lattice, temperature, nsteps_equi)
+            a=ax[j].imshow(lattice_equilibrated, cmap=cmap, norm=norm)
+            ax[j].set(xlabel='x spins', title=f'T={temperature}')
+    ax[0].set(ylabel='y spins')
+
+    plt.colorbar(a, cmap=cmap, norm=norm, boundaries=bounds, fraction=0.046, pad=0.04)
+    plt.savefig('lattices.pdf')
+    plt.show()
+
+    return
+
 def main():
     np.random.seed(67)
     ndim = 2 ; lattice_axis_length = 50
@@ -251,6 +291,9 @@ def main():
     
     num_boxes = 10
     nsteps_equi = n_cycles * num_spins * 10 # maximum number of steps to equilibrate (if not reached earlier)
+
+    # plot_equi(nsteps_equi)
+
 
     # # initialise csv file to save the simulation
     # filename = "simulation.csv"
@@ -264,13 +307,26 @@ def main():
     #     csvwriter.writerow(field_names)
     #     csvfile.close()
 
-    # for temperature in np.arange(1.0, 4.1, 0.2):
-    for temperature in [2.2]:
-        print('Running simulation for T = ', temperature)
-        for i in range(1):
-            magnetizations, hamiltonians, cor_time = init_sim(lattice_axis_length, temperature, nsteps_equi, num_boxes)
-            # quantities(magnetizations, hamiltonians, num_spins, cor_time, temperature, filename)
-            
+    # # for temperature in np.arange(1.0, 4.1, 0.2):
+    # fig, ax = plt.subplots(1,1)
+    # for temperature in [1.0, 2.0, 3.0, 4.0]:
+    #     print('Running simulation for T = ', temperature)
+    #     for i in range(1):
+    #         magnetizations, hamiltonians, cor_time = init_sim(lattice_axis_length, temperature, nsteps_equi, num_boxes)
+    #         # quantities(magnetizations, hamiltonians, num_spins, cor_time, temperature, filename)
+    #         ax.plot(np.arange(len(magnetizations)) / num_spins, magnetizations / num_spins, label=f'T={temperature}, N={lattice_axis_length}')
+    # ax.set(xlabel='t [$1/N^2$]', ylabel='magnetization per spin', xscale='log')
+    # ax.legend(loc='best')
+    # plt.savefig('magnetization.pdf')
+    # plt.show()
 
 if __name__ == '__main__':
+    # set default font size for axis labels
+    mpl.rcParams['axes.labelsize'] = 16
+    mpl.rcParams['xtick.labelsize'] = 12
+    mpl.rcParams['ytick.labelsize'] = 12
+
+    # set default legend font size
+    mpl.rcParams['legend.fontsize'] = 12
+
     main()
