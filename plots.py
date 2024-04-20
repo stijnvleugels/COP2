@@ -40,7 +40,7 @@ def figure_tcor(filename:str):
     ax.grid(alpha=0.5)
     ax.set_yscale('log')
     ax.text(2.3, 1.5e0, r'T$_{crit}$', color='red', fontsize=14)
-    plt.savefig('correlation_time.pdf')
+    plt.savefig('correlation_time_h1.pdf')
     plt.show()
 
 def figure_quantities(filename:str):
@@ -66,12 +66,13 @@ def figure_quantities(filename:str):
     ax[3].set(xlabel='Temperature [J/k$_B$]', ylabel='$C$')
     ax[0].legend(loc='upper right')
 
-    plt.savefig('quantities.pdf')
+    plt.savefig('quantities_h1.pdf')
     plt.show()
 
 def main():
-    filename = 'simulation'
-    filename = sys.argv[1]
+    filename = 'simulation_h1'
+    if len(sys.argv) > 1:
+        filename = sys.argv[1]
     filename = filename + '.csv'
 
     set_defaults()
