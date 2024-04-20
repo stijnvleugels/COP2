@@ -1,11 +1,11 @@
 This set of python files allows you to run a 2D ising model with optional external magnetic field and plot the results. 
 
-Run the simulation in the terminal with the following command:
-python isingmodel.py [N] [filename] [H] [seed]
+Run the simulation in the terminal with the following command: \
+`python isingmodel.py [N] [filename] [H] [seed]` \
 it is possible to skip the arguments at the end, they will be set to defaults, but it's impossible to skip an argument and then set the next one in this order.
 
-Producing the plots is done using:
-python plots.py [filename]
+Producing the plots is done using: \
+`python plots.py [filename]`
 
 The arguments have the following meaning: 
  - N is the lattice axis length. E.g., N=50 yields a 50x50 lattice of spins.
