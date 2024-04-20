@@ -2,6 +2,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import matplotlib as mpl
+import sys
+
+""" 
+With this file, you can produce the plots for the correlation time and the four quantities of interest, 
+after running the simulation with isingmodel.py 
+The file expects the name of the csv file as an argument (excluding extension).
+"""
 
 def set_defaults():
     ''' Set default values for matplotlib rcParams. '''
@@ -13,9 +20,9 @@ def set_defaults():
     # set default legend font size
     mpl.rcParams['legend.fontsize'] = 12
 
-def figure_tcor():
+def figure_tcor(filename:str):
     ''' Plot correlation time as a function of temperature. '''
-    df = pd.read_csv("simulation_17april.csv")
+    df = pd.read_csv(filename)
 
     fig, ax = plt.subplots(1, 1, figsize=(8,6))
     correlation_times = df['Correlation_time'] / 50**2
@@ -36,9 +43,9 @@ def figure_tcor():
     plt.savefig('correlation_time.pdf')
     plt.show()
 
-def figure_quantities():
+def figure_quantities(filename:str):
     ''' Plot the four quantities of interest. '''
-    df = pd.read_csv("simulation_17april.csv")
+    df = pd.read_csv(filename)
 
     fig, ax = plt.subplots(4, 1, figsize=(8, 8), sharex=True, constrained_layout=True)
 
@@ -59,14 +66,17 @@ def figure_quantities():
     ax[3].set(xlabel='Temperature [J/k$_B$]', ylabel='$C$')
     ax[0].legend(loc='upper right')
 
-
     plt.savefig('quantities.pdf')
     plt.show()
 
 def main():
+    filename = 'simulation'
+    filename = sys.argv[1]
+    filename = filename + '.csv'
+
     set_defaults()
-    figure_tcor()
-    figure_quantities()
+    figure_tcor(filename)
+    figure_quantities(filename)
 
 if __name__ == '__main__':
     main()

@@ -1,8 +1,16 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from tqdm import tqdm
 import csv
 import matplotlib as mpl
+import sys
+
+"""
+This script is used to run an ising model simulation, and save the results to a csv file.
+To see how to run this file with custom inputs, see the README.md file.
+
+The simulation produces a single csv file, containing observables of the system at each temperature for three runs.
+The observables are the correlation time, magnetization, energy, magnetic susceptibility and specific heat per spin.
+"""
 
 def init_lattice(lattice_axis_length:int, ndim:int=2) -> np.ndarray:
     ''' Initialize a lattice of spins, with random orientation, of size N x N x ... x N (ndim times) where N is lattice_axis_length'''
@@ -12,7 +20,6 @@ def init_lattice(lattice_axis_length:int, ndim:int=2) -> np.ndarray:
 def complete_hamiltonian(lattice:np.ndarray) -> float:
     ''' Calculate the Hamiltonian of the entire lattice '''
     coupling_constant = 1.0  
-    external_field = 0.0
     hami = 0
 
     # must sum over nearest neighbors, with periodic boundary conditions
@@ -25,10 +32,10 @@ def complete_hamiltonian(lattice:np.ndarray) -> float:
 
     return hami
 
-def metropolis(lattice_old:np.ndarray, temperature:float, hamiltonian:float, ndim:int=2) -> np.ndarray:
+def metropolis(lattice_old:np.ndarray, temperature:float, hamiltonian:float, ndim:int=2) -> tuple[np.ndarray, float]:
     ''' Perform one step of the Metropolis algorithm.
         Flips a random spin, and accepts or rejects the flip based on the change in energy.
-        Returns the updated lattice.
+        Returns the updated lattice and the updated Hamiltonian.
     '''
     lattice_new = lattice_old.copy()
     beta = 1.0 / temperature
@@ -42,7 +49,7 @@ def metropolis(lattice_old:np.ndarray, temperature:float, hamiltonian:float, ndi
                     + lattice_old[(slice_idx[0]-1) % lattice_axis_length, slice_idx[1]] \
                     + lattice_old[slice_idx[0], (slice_idx[1]+1) % lattice_axis_length] \
                     + lattice_old[slice_idx[0], (slice_idx[1]-1) % lattice_axis_length]
-    delta_hami = - sum_neighbours * (lattice_new[tuple(slice_idx)] - lattice_old[tuple(slice_idx)])
+    delta_hami = - sum_neighbours * (lattice_new[tuple(slice_idx)] - lattice_old[tuple(slice_idx)]) - external_field * (lattice_new[tuple(slice_idx)] - lattice_old[tuple(slice_idx)])
     
     # reject the flip only if E increases with probability 1-exp(-beta * delta_E)
     if ((delta_hami > 0) & (np.exp(-beta * delta_hami) < np.random.rand())):
@@ -57,7 +64,7 @@ def find_equilibrium_energy(temperature:float) -> float:
         This equilibrium energy can be used to determine if the system is in equilibrium for larger systems. 
         Returns the average energy per particle that corresponds to equilibrium for a given temperature. 
     '''
-    nsteps = 1000 ; lattice_axis_length = 5 # small lattice equilibrates fast
+    nsteps = 500 ; lattice_axis_length = 5 # small lattice equilibrates fast
     equilibrium_energies = []
     for i in range(5):
         hamiltonians = np.zeros(nsteps) # store energy at each step
@@ -87,16 +94,16 @@ def equilibrate_lattice(lattice:np.ndarray, temperature:float, nsteps:int) -> np
 
         if hamiltonian/lattice.size > equilibrium_energy - 0.01*np.abs(equilibrium_energy) \
                 and hamiltonian/lattice.size < equilibrium_energy + 0.01*np.abs(equilibrium_energy):
-            return lattice, magnetizations[:i+1], hamiltonians[:i+1] # stop the simulation if we are at equilibrium
+            return lattice # stop the simulation if we are at equilibrium
 
-    return lattice, magnetizations, hamiltonians # if we don't reach equilibrium, return the lattice after nsteps
+    return lattice # if we don't reach equilibrium, return the lattice after nsteps
 
 def autocorrelation_function(magnetizations:np.ndarray, sampling_factor:int=500, t_ratio_threshold:float=0.05) -> tuple[np.ndarray, float]:
     ''' Compute the autocorrelation chi for magnetizations.
         Calculates chi `sampling_factor` times over the timespan `len(magnetisations) * t_ratio_threshold` to reduce computation time, and interpolates linearly between these points to get chi(t) at all timesteps.
         Returns chi(t) and t[chi<0]/t_max, the fraction of the total time at which chi becomes negative.
     '''
-    time_fraction = t_ratio_threshold * 1.3 # if the point chi<0 has not been found before the threshold, don't bother calculating further (t/t_max will be too low for sufficient samples)
+    time_fraction = t_ratio_threshold * 1.3 # add buffer because the determined t_threshold was calculated with very coarse sampling.
     time_max = len(magnetizations) - 1
     time = np.arange(len(magnetizations)*time_fraction, dtype=int)
     spacing = len(time) // sampling_factor
@@ -109,23 +116,8 @@ def autocorrelation_function(magnetizations:np.ndarray, sampling_factor:int=500,
         meansquared_term = 1/(time_max -t) * np.sum(sliced_magnetizations) * 1/(time_max - t) * np.sum(rolled_magnetizations)
         chi[t//spacing] = cross_term - meansquared_term
         if chi[t//spacing] < 0:
-            # print('True found negative chi at t/time_max = ', t/time_max)
             # interpolate linearly to get the autocorrelation function at all timesteps (between spacings)
             chi_new = np.interp(time[:t], time[:-1:spacing][:t//spacing], chi[:t//spacing])
-            # fig, ax = plt.subplots()
-            # ax.plot(time[:t] / 50**2, chi_new / chi_new[0], linestyle='-', label='Interpolated $\chi(t)$', zorder=1, color='blue')
-            # ax.scatter(time[:-1:spacing][:t//spacing] / 50**2, chi[:t//spacing] / chi_new[0], label='$\chi$ samples', s=5, marker='x', color='black', zorder=3)
-            # tcor = np.sum(chi_new/chi_new[0])
-            # ax.plot(np.arange(len(chi_new))/50**2, np.exp(-np.arange(len(chi_new))/tcor), linestyle='--',label=r'exp(-t/$\tau$)', zorder=2, color='green')
-            # ax.set_xlabel('t [1/N$^2$]', fontsize=16)
-            # ax.set_ylabel('$\chi(t) / \chi(0)$', fontsize=16)
-            # # set tick label size to 12
-            # ax.tick_params(axis='both', which='major', labelsize=12)
-            # legend = ax.legend(loc='upper right', fontsize='x-large', markerscale=4)
-            # plt.tight_layout()
-            # ax.grid(alpha=0.5)
-            # plt.savefig('autocorrelation_vs_t22.pdf')
-            # plt.show()
             return chi_new, t/time_max
     
     chi_new = np.interp(time[:t], time[:-1:spacing][:t//spacing], chi[:t//spacing])
@@ -139,35 +131,31 @@ def estimate_chi_zero(magnetizations:np.ndarray, sampling_factor:int=10, t_ratio
     return t_ratio
 
 def run_sim(lattice:np.ndarray, temperature:float, num_boxes:int):
+    ''' Run the simulation for a lattice at temperature, until the correlation time is found and num_boxes*16*correlation_time steps are run.
+        Returns the correlation time, the lattice at the end of the simulation, the Hamiltonians at each step, and the magnetizations at each step.
+    '''
+    print('Calculating correlation time...')
     t_ratio_threshold = 0.05
     step_factor = 100 # check for correlation time every 1% of the maximum number of steps
-
     max_steps_sim = 1000000 * 16 * num_boxes # maximum number of steps - runs with this if no correlation time is found
     steps_per_round = max_steps_sim // step_factor
-
     magnetizations = np.zeros(max_steps_sim)
     hamiltonian = complete_hamiltonian(lattice)
     hamiltonians = np.zeros(max_steps_sim)
+
     for i in range(max_steps_sim):
         lattice, hamiltonian = metropolis(lattice, temperature, hamiltonian)
         magnetizations[i] = np.sum(lattice) 
         hamiltonians[i] = hamiltonian
-        if ((i+1) % steps_per_round == 0):
+        if ((i+1) % steps_per_round == 0): # check for correlation time
             round_num = (i+1) // steps_per_round
             t_ratio_chi_subzero = estimate_chi_zero(magnetizations[:i+1], 10*(round_num//10 + 1), t_ratio_threshold) # every 10 rounds, increase sampling factor because we have more total steps
             if t_ratio_chi_subzero < t_ratio_threshold: # if t_max is not much larger than the t at which chi becomes negative, there is lots of noise and no proper exponential shape
                 autocor, _ = autocorrelation_function(magnetizations[:i+1] / lattice.size, sampling_factor=100, t_ratio_threshold=t_ratio_chi_subzero)
                 cor_time = np.sum(autocor/autocor[0])
-                # print(f'Correlation time: {cor_time}')
-                # fig, ax = plt.subplots()
-                # ax.plot(autocor/autocor[0], label='Autocorrelation function')
-                # ax.plot(np.arange(len(autocor)), np.exp(-np.arange(len(autocor))/cor_time), linestyle='--',label='exp(-t/tau)')
-                # ax.set(xlabel='t', ylabel='Autocorrelation function', title='Autocorrelation function vs t')
-                # ax.legend()
-                # plt.show()
 
                 needed_nsteps = round(16 * num_boxes * cor_time - (i+1) + 1)
-                if (needed_nsteps > 0):
+                if (needed_nsteps > 0): # if we need more steps to reach num_boxes*16*correlation_time
                     print('Running remainder of simulation given correlation time...')
                     for j in range(needed_nsteps+1):
                         lattice, hamiltonian = metropolis(lattice, temperature, hamiltonian)
@@ -180,18 +168,15 @@ def run_sim(lattice:np.ndarray, temperature:float, num_boxes:int):
             
     return cor_time, lattice, hamiltonians, magnetizations
 
-def init_sim(lattice_axis_length:int, temperature:float, nsteps_equi:int, num_boxes:int) -> np.ndarray:
-    ''' Run the simulation for a lattice of size lattice_axis_length x lattice_axis_length at temperature for nsteps steps, equilibrating for a maximum of nsteps_equi steps first.
-        Returns the magnetization of the lattice at each step.
+def init_sim(lattice_axis_length:int, temperature:float, nsteps_equi:int) -> np.ndarray:
+    ''' Initialise a lattice and equilibrate it (for a maximum of nsteps_equi steps).
+        Returns the magnetization of the lattice at equilibrium.
     '''
     lattice = init_lattice(lattice_axis_length=lattice_axis_length, ndim=2)
     print('Equilibrating lattice...')
-    lattice_equilibrated = equilibrate_lattice(lattice, temperature, nsteps_equi)[0]
+    lattice_equilibrated = equilibrate_lattice(lattice, temperature, nsteps_equi)
 
-    print('Calculating correlation time...')
-    cor_time, lattice, hamiltonians, magnetizations = run_sim(lattice_equilibrated, temperature, num_boxes)
-
-    return magnetizations, hamiltonians, cor_time
+    return lattice_equilibrated
 
 def standard_deviation(quantity:np.ndarray, cor_time:float):
     '''Takes a quantity measured for each lattice configuration and the correlation time of the simulation.
@@ -242,91 +227,43 @@ def quantities(magnetizations:np.ndarray, hamiltonians:np.ndarray, num_spins:flo
 
     return
 
-def plot_equi(nsteps_equi:int):
-    colors = ['blue', 'black', 'red']
-    alphas = [1, 0.7]
-
-    # fig, ax = plt.subplots(2,1,figsize=(8,6), constrained_layout=True, sharex=True)
-    # for j, temperature in enumerate([1.0, 2.2, 4.0]):
-    #     for i in range(1):
-    #         print('bezig')
-    #         axis_length=50
-    #         lattice = init_lattice(lattice_axis_length=axis_length, ndim=2)
-    #         lattice_equilibrated, magnetizations, hamiltonians = equilibrate_lattice(lattice, temperature, nsteps_equi)
-    #         ax[0].plot(np.arange(len(magnetizations)) / axis_length**2, magnetizations / axis_length**2, label=f'T={temperature}', color=colors[j], alpha=0.7)
-    #         ax[1].plot(np.arange(len(hamiltonians)) / axis_length**2, hamiltonians / axis_length**2, color=colors[j], alpha=0.7)
-
-    # ax[0].set(ylabel='magnetization per spin', xscale='log')
-    # ax[1].set(xlabel='t [$1/N^2$]', ylabel='energy per spin', xscale='log')
-    # ax[0].legend(loc='best')
-    # plt.savefig('Equi.pdf')
-    # plt.show()
-
-    cmap = mpl.colors.ListedColormap(['black', 'white'])
-    bounds=[-1,0,1]
-    norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
-
-    fig, ax = plt.subplots(1,3,figsize=(8,4), constrained_layout=True, sharey=True)
-    for j, temperature in enumerate([1.0, 2.2, 4.0]):
-        for i in range(1):
-            print('bezig')
-            axis_length=50
-            lattice = init_lattice(lattice_axis_length=axis_length, ndim=2)
-            lattice_equilibrated, magnetizations, hamiltonians = equilibrate_lattice(lattice, temperature, nsteps_equi)
-            a=ax[j].imshow(lattice_equilibrated, cmap=cmap, norm=norm)
-            ax[j].set(xlabel='x spins', title=f'T={temperature}')
-    ax[0].set(ylabel='y spins')
-
-    plt.colorbar(a, cmap=cmap, norm=norm, boundaries=bounds, fraction=0.046, pad=0.04)
-    plt.savefig('lattices.pdf')
-    plt.show()
-
-    return
-
 def main():
-    np.random.seed(67)
-    ndim = 2 ; lattice_axis_length = 50
-    n_cycles = 300 # number of times we do N**2 Metropolis steps 
-    num_spins = lattice_axis_length**ndim
+    # set default args, take from sys.argv if available (which are the command line args)
+    args = [50, 'simulation', 1.0, 67]
     
+    for i, arg in enumerate(sys.argv):
+        if i > 0: # first arg is this file's name
+            args[i-1] = arg
+        
+    global external_field
+    lattice_axis_length, results_filename, external_field, seed = args
+    np.random.seed(int(seed))
+    lattice_axis_length = int(lattice_axis_length)
+    external_field = float(external_field)
+
+    ndim = 2
+    num_spins = lattice_axis_length**ndim
     num_boxes = 10
-    nsteps_equi = n_cycles * num_spins * 10 # maximum number of steps to equilibrate (if not reached earlier)
+    nsteps_equi = 3000 * num_spins * 10 # maximum number of steps to equilibrate (if not reached earlier)
 
-    # plot_equi(nsteps_equi)
+    # initialise csv file to save the simulation
+    filename = f"{results_filename}.csv"
+    field_names = ['Temperature', 'Correlation_time', 
+                   'Magnetization_mean', 'Magnetization_std', 
+                   'Energy_mean', 'Energy_std', 
+                   'Magnetic_susceptibility_mean', 'Magnetic_susceptibility_std',
+                   'Specific_heat_mean', 'Specific_heat_std']
+    with open(filename, 'w') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerow(field_names)
+        csvfile.close()
 
-
-    # # initialise csv file to save the simulation
-    # filename = "simulation.csv"
-    # field_names = ['Temperature', 'Correlation_time', 
-    #                'Magnetization_mean', 'Magnetization_std', 
-    #                'Energy_mean', 'Energy_std', 
-    #                'Magnetic_susceptibility_mean', 'Magnetic_susceptibility_std',
-    #                'Specific_heat_mean', 'Specific_heat_std']
-    # with open(filename, 'w') as csvfile:
-    #     csvwriter = csv.writer(csvfile)
-    #     csvwriter.writerow(field_names)
-    #     csvfile.close()
-
-    # # for temperature in np.arange(1.0, 4.1, 0.2):
-    # fig, ax = plt.subplots(1,1)
-    # for temperature in [1.0, 2.0, 3.0, 4.0]:
-    #     print('Running simulation for T = ', temperature)
-    #     for i in range(1):
-    #         magnetizations, hamiltonians, cor_time = init_sim(lattice_axis_length, temperature, nsteps_equi, num_boxes)
-    #         # quantities(magnetizations, hamiltonians, num_spins, cor_time, temperature, filename)
-    #         ax.plot(np.arange(len(magnetizations)) / num_spins, magnetizations / num_spins, label=f'T={temperature}, N={lattice_axis_length}')
-    # ax.set(xlabel='t [$1/N^2$]', ylabel='magnetization per spin', xscale='log')
-    # ax.legend(loc='best')
-    # plt.savefig('magnetization.pdf')
-    # plt.show()
+    for temperature in np.arange(1.0, 4.1, 0.2):
+        print('Running simulation for T = ', temperature)
+        for i in range(3):
+            lattice_equilibrated = init_sim(lattice_axis_length, temperature, nsteps_equi)
+            cor_time, lattice, hamiltonians, magnetizations = run_sim(lattice_equilibrated, temperature, num_boxes)
+            quantities(magnetizations, hamiltonians, num_spins, cor_time, temperature, filename)
 
 if __name__ == '__main__':
-    # set default font size for axis labels
-    mpl.rcParams['axes.labelsize'] = 16
-    mpl.rcParams['xtick.labelsize'] = 12
-    mpl.rcParams['ytick.labelsize'] = 12
-
-    # set default legend font size
-    mpl.rcParams['legend.fontsize'] = 12
-
     main()
